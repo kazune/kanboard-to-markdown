@@ -1,6 +1,6 @@
 # Kanboard to Markdown
 
-Kanboard のボード情報を取得し、列ごとのタスク一覧を Markdown に変換する Bash スクリプトです。
+Kanboard のボードとタスク情報を Markdown に変換する Bash スクリプトです。
 
 ## 必要なもの
 
@@ -29,31 +29,38 @@ chmod 600 .env
 
 ## 使い方
 
-引数に Kanboard のボード ID を1つ指定します。結果は標準出力へ出力されます。
+`kanboard-md` はサブコマンドと対象の ID を受け取ります。結果は標準出力へ出力されます。
 
 ```bash
-./kanboard-to-md.sh <board_id>
+./kanboard-md board <board_id>
+./kanboard-md task <task_id>
 ```
+
+## ボード
+
+引数に Kanboard のボード ID を1つ指定します。
 
 画面に表示する場合:
 
 ```bash
-./kanboard-to-md.sh 3
+./kanboard-md board 3
 ```
 
 ファイルへ保存する場合:
 
 ```bash
-./kanboard-to-md.sh 3 > board.md
+./kanboard-md board 3 > board.md
 ```
 
-ボード ID は正の整数で指定する必要があります。引数がない、引数が複数ある、または値が不正な場合は Usage を表示して終了します。
+ボード ID は正の整数で指定する必要があります。サブコマンド、引数の数、または ID が不正な場合は Usage を表示して終了します。
 
 ```text
-Usage: ./kanboard-to-md.sh <board_id>
+Usage:
+  ./kanboard-md board <board_id>
+  ./kanboard-md task <task_id>
 ```
 
-## 出力内容
+### 出力内容
 
 次の情報を Markdown に変換します。
 
@@ -84,19 +91,23 @@ _タスクなし_
 
 スクリプトは Kanboard JSON-RPC API の `getProjectById` と `getBoard` を使用します。デフォルトを含む各スイムレーンを `##`、その中の列を `###` の見出しとして出力します。
 
-## タスク詳細の出力
+## タスク
 
-`kanboard-task-to-md.sh` は、指定したタスクの詳細、サブタスク、コメントを Markdown に変換します。引数にタスク ID を1つ指定し、リダイレクトで保存します。
+`task` サブコマンドは、指定したタスクの詳細、サブタスク、コメントを Markdown に変換します。引数にタスク ID を1つ指定し、リダイレクトで保存します。
 
 ```bash
-./kanboard-task-to-md.sh 63 > task-63.md
+./kanboard-md task 63 > task-63.md
 ```
 
 タスク ID は正の整数で指定する必要があります。
 
 ```text
-Usage: ./kanboard-task-to-md.sh <task_id>
+Usage:
+  ./kanboard-md board <board_id>
+  ./kanboard-md task <task_id>
 ```
+
+### 出力内容
 
 次の情報を出力します。
 
@@ -112,8 +123,6 @@ Usage: ./kanboard-task-to-md.sh <task_id>
 構文と ShellCheck の検査は次のコマンドで実行できます。
 
 ```bash
-bash -n kanboard-to-md.sh
-shellcheck kanboard-to-md.sh
-bash -n kanboard-task-to-md.sh
-shellcheck kanboard-task-to-md.sh
+bash -n kanboard-md
+shellcheck kanboard-md
 ```
