@@ -61,20 +61,52 @@ config_file_mode() {
   return 1
 }
 
+config_file_uid() {
+  local file=$1
+  local uid=
+
+  if uid=$(stat -L -f '%u' "$file" 2>/dev/null) && [[ "$uid" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$uid"
+    return
+  fi
+
+  if uid=$(stat -L -c '%u' "$file" 2>/dev/null) && [[ "$uid" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$uid"
+    return
+  fi
+
+  return 1
+}
+
 check_config_permissions() {
   local file=$1
+  local display_file=${2:-$file}
   local mode=
+  local owner_uid=
+  local current_uid=
 
   if ! mode=$(config_file_mode "$file"); then
     CONFIG_STATUS="権限を確認できず"
-    echo "Error: could not determine config file permissions: $file" >&2
+    echo "Error: could not determine config file permissions: $display_file" >&2
     exit 1
   fi
 
   if [[ "${mode: -2}" != "00" ]]; then
     CONFIG_STATUS="安全でないパーミッション（${mode}）"
-    echo "Error: insecure config file permissions: $file (mode $mode)" >&2
-    echo "Remove all permissions for group and others, for example: chmod 600 '$file'" >&2
+    echo "Error: insecure config file permissions: $display_file (mode $mode)" >&2
+    echo "Remove all permissions for group and others, for example: chmod 600 '$display_file'" >&2
+    exit 1
+  fi
+
+  if ! owner_uid=$(config_file_uid "$file") || ! current_uid=$(id -u); then
+    CONFIG_STATUS="所有者を確認できず"
+    echo "Error: could not determine config file owner: $display_file" >&2
+    exit 1
+  fi
+
+  if [[ "$owner_uid" != "$current_uid" ]]; then
+    CONFIG_STATUS="現在のユーザーが所有していない"
+    echo "Error: config file must be owned by the current user: $display_file" >&2
     exit 1
   fi
 }
@@ -89,10 +121,18 @@ load_config() {
     ENV_CONFIG_STATUS="設定済み"
   fi
   if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
-    ENV_XDG_STATUS="設定済み"
+    if [[ "$XDG_CONFIG_HOME" == /* ]]; then
+      ENV_XDG_STATUS="設定済み"
+    else
+      ENV_XDG_STATUS="設定済み（相対パスのため無効）"
+    fi
   fi
   if [[ -n "${HOME:-}" ]]; then
-    ENV_HOME_STATUS="設定済み"
+    if [[ "$HOME" == /* ]]; then
+      ENV_HOME_STATUS="設定済み"
+    else
+      ENV_HOME_STATUS="設定済み（相対パスのため無効）"
+    fi
   fi
 
   if [[ -n "$saved_url" ]]; then
@@ -113,11 +153,11 @@ load_config() {
   if [[ -n "${KANBOARD_MD_CONFIG:-}" ]]; then
     CONFIG_FILE=$KANBOARD_MD_CONFIG
     CONFIG_SOURCE="KANBOARD_MD_CONFIG"
-  elif [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
+  elif [[ "${XDG_CONFIG_HOME:-}" == /* ]]; then
     config_home=$XDG_CONFIG_HOME
     CONFIG_FILE="$config_home/kanboard-md/config.env"
     CONFIG_SOURCE="XDG_CONFIG_HOME"
-  elif [[ -n "${HOME:-}" ]]; then
+  elif [[ "${HOME:-}" == /* ]]; then
     config_home="$HOME/.config"
     CONFIG_FILE="$config_home/kanboard-md/config.env"
     CONFIG_SOURCE="HOME"
@@ -126,13 +166,19 @@ load_config() {
   fi
 
   if [[ -z "$CONFIG_FILE" ]]; then
-    CONFIG_STATUS="探索不可（XDG_CONFIG_HOME と HOME が未設定）"
+    CONFIG_STATUS="探索不可（利用可能な XDG_CONFIG_HOME と HOME が未設定）"
   elif [[ -f "$CONFIG_FILE" ]]; then
-    check_config_permissions "$CONFIG_FILE"
+    if ! exec 9<"$CONFIG_FILE"; then
+      CONFIG_STATUS="ファイルを開けず"
+      echo "Error: could not open config file: $CONFIG_FILE" >&2
+      exit 1
+    fi
+    check_config_permissions /dev/fd/9 "$CONFIG_FILE"
     set -a
-    # shellcheck disable=SC1090
-    source "$CONFIG_FILE"
+    # shellcheck disable=SC1091
+    source /dev/fd/9
     set +a
+    exec 9<&-
     CONFIG_STATUS="読込済み"
   else
     CONFIG_STATUS="ファイルなし"
