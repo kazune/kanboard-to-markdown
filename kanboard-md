@@ -183,7 +183,7 @@ export_board() {
               ([
                 (if ($task.assignee_name // "") != "" then "担当: " + ($task.assignee_name | text)
                  elif ($task.assignee_username // "") != "" then "担当: " + ($task.assignee_username | text)
-                 else empty end),
+                 else "担当: 未割り当て" end),
                 (if ($task.category_name // "") != "" then "カテゴリ: " + ($task.category_name | text) else empty end),
                 (($task.date_due | due_date) as $due | if $due then "期限: " + $due else empty end),
                 (if ($task.score // 0 | tonumber) > 0 then "複雑度: " + ($task.score | text) else empty end)
