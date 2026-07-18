@@ -29,12 +29,38 @@ chmod 600 .env
 
 ## 使い方
 
-`kanboard-md` はサブコマンドと対象の ID を受け取ります。結果は標準出力へ出力されます。
+`kanboard-md` はサブコマンドを受け取ります。`board` と `task` では対象の ID も指定します。結果は標準出力へ出力されます。
 
 ```bash
+./kanboard-md boards
 ./kanboard-md board <board_id>
 ./kanboard-md task <task_id>
 ```
+
+## ボード一覧
+
+`boards` サブコマンドは、利用可能なボードを有効・無効に分けて出力します。
+
+```bash
+./kanboard-md boards
+./kanboard-md boards > boards.md
+```
+
+各項目にはボード ID、名前、Kanboard 上のボードへのリンク、識別子（設定されている場合）が含まれます。
+
+```markdown
+# Boards
+
+## 有効 (1)
+
+- #3 [Sample Project](https://kanboard.example.com/board/3)
+
+## 無効 (0)
+
+_ボードなし_
+```
+
+このサブコマンドは通常 `getMyProjects` を使用し、認証ユーザーが利用できるボードを取得します。Application API の `jsonrpc` ユーザーで認証している場合は `getAllProjects` を使用します。
 
 ## ボード
 
@@ -56,6 +82,7 @@ chmod 600 .env
 
 ```text
 Usage:
+  ./kanboard-md boards
   ./kanboard-md board <board_id>
   ./kanboard-md task <task_id>
 ```
@@ -103,6 +130,7 @@ _タスクなし_
 
 ```text
 Usage:
+  ./kanboard-md boards
   ./kanboard-md board <board_id>
   ./kanboard-md task <task_id>
 ```

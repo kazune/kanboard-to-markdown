@@ -7,21 +7,29 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 usage() {
   cat >&2 <<EOF
 Usage:
+  $0 boards
   $0 board <board_id>
   $0 task <task_id>
 EOF
 }
 
-if [[ $# -ne 2 || ! "$2" =~ ^[1-9][0-9]*$ ]]; then
-  usage
-  exit 1
-fi
-
-COMMAND=$1
-RESOURCE_ID=$2
+COMMAND=${1:-}
+RESOURCE_ID=
 
 case "$COMMAND" in
-  board | task) ;;
+  boards)
+    if [[ $# -ne 1 ]]; then
+      usage
+      exit 1
+    fi
+    ;;
+  board | task)
+    if [[ $# -ne 2 || ! "$2" =~ ^[1-9][0-9]*$ ]]; then
+      usage
+      exit 1
+    fi
+    RESOURCE_ID=$2
+    ;;
   *)
     usage
     exit 1
@@ -79,6 +87,47 @@ rpc() {
   fi
 
   jq '.result' "$response_file" >"$destination"
+}
+
+export_boards() {
+  local method=getMyProjects
+
+  if [[ "$KANBOARD_USERNAME" == "jsonrpc" ]]; then
+    method=getAllProjects
+  fi
+
+  rpc "$method" '{}' "$TMP_DIR/projects.json"
+
+  jq -nr \
+    --slurpfile projects "$TMP_DIR/projects.json" '
+      def text:
+        if . == null then "" else tostring | gsub("[\\r\\n]+"; " ") end;
+
+      def items:
+        if type == "array" then . else [] end;
+
+      def board_link:
+        "- #" + (.id | text) + " " +
+        (if (.url.board // "") != "" then
+          "[" + (.name | text) + "](" + .url.board + ")"
+         else .name | text end) +
+        (if (.identifier // "") != "" then " (`" + (.identifier | text) + "`)" else "" end);
+
+      ($projects[0] | items | sort_by(.id | tonumber)) as $all |
+      ([$all[] | select((.is_active | tostring) == "1")]) as $active |
+      ([$all[] | select((.is_active | tostring) != "1")]) as $inactive |
+
+      "# Boards",
+      "",
+      "## 有効 (" + ($active | length | tostring) + ")",
+      "",
+      (if ($active | length) == 0 then "_ボードなし_" else ($active[] | board_link) end),
+      "",
+      "## 無効 (" + ($inactive | length | tostring) + ")",
+      "",
+      (if ($inactive | length) == 0 then "_ボードなし_" else ($inactive[] | board_link) end),
+      ""
+    '
 }
 
 export_board() {
@@ -276,6 +325,7 @@ export_task() {
 }
 
 case "$COMMAND" in
+  boards) export_boards ;;
   board) export_board "$RESOURCE_ID" ;;
   task) export_task "$RESOURCE_ID" ;;
 esac
