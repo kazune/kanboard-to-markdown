@@ -84,6 +84,29 @@ _タスクなし_
 
 スクリプトは Kanboard JSON-RPC API の `getProjectById` と `getBoard` を使用します。デフォルトを含む各スイムレーンを `##`、その中の列を `###` の見出しとして出力します。
 
+## タスク詳細の出力
+
+`kanboard-task-to-md.sh` は、指定したタスクの詳細、サブタスク、コメントを Markdown に変換します。引数にタスク ID を1つ指定し、リダイレクトで保存します。
+
+```bash
+./kanboard-task-to-md.sh 63 > task-63.md
+```
+
+タスク ID は正の整数で指定する必要があります。
+
+```text
+Usage: ./kanboard-task-to-md.sh <task_id>
+```
+
+次の情報を出力します。
+
+- 状態、プロジェクト、スイムレーン、列、担当者
+- カテゴリ、参照、優先度、複雑度、作業時間
+- 作成日時、開始日時、期限、完了日時、タスク URL
+- 説明、サブタスク、コメント
+
+スクリプトは `getTask`、`getProjectById`、`getBoard`、`getAllSubtasks`、`getAllComments` を使用します。日時は UTC で出力します。
+
 ## 検査
 
 構文と ShellCheck の検査は次のコマンドで実行できます。
@@ -91,4 +114,6 @@ _タスクなし_
 ```bash
 bash -n kanboard-to-md.sh
 shellcheck kanboard-to-md.sh
+bash -n kanboard-task-to-md.sh
+shellcheck kanboard-task-to-md.sh
 ```
