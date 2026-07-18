@@ -70,18 +70,12 @@ rpc() {
 
 PARAMS=$(jq -cn --argjson project_id "$BOARD_ID" '{project_id: $project_id}')
 rpc "getProjectById" "$PARAMS" "$TMP_DIR/project.json"
-rpc "getColumns" "$PARAMS" "$TMP_DIR/columns.json"
-
-TASK_PARAMS=$(jq -cn \
-  --argjson project_id "$BOARD_ID" \
-  '{project_id: $project_id, status_id: 1}')
-rpc "getAllTasks" "$TASK_PARAMS" "$TMP_DIR/tasks.json"
+rpc "getBoard" "$PARAMS" "$TMP_DIR/board.json"
 
 render_markdown() {
   jq -nr \
     --slurpfile project "$TMP_DIR/project.json" \
-    --slurpfile columns "$TMP_DIR/columns.json" \
-    --slurpfile tasks "$TMP_DIR/tasks.json" '
+    --slurpfile board "$TMP_DIR/board.json" '
       def text:
         if . == null then "" else tostring | gsub("[\\r\\n]+"; " ") end;
 
@@ -93,8 +87,7 @@ render_markdown() {
         end;
 
       ($project[0]) as $p |
-      ($columns[0] | sort_by(.position | tonumber)) as $cs |
-      ($tasks[0] | sort_by([(.column_id | tonumber), (.position | tonumber)])) as $ts |
+      ($board[0]) as $swimlanes |
 
       "# " + ($p.name | text),
       "",
@@ -104,33 +97,38 @@ render_markdown() {
         "- 説明: " + ($p.description | text)
        else empty end),
       "",
-      ($cs[] |
-        . as $column |
-        [$ts[] | select((.column_id | tostring) == ($column.id | tostring))] as $column_tasks |
-        "## " + ($column.title | text) + " (" + ($column_tasks | length | tostring) + ")",
-        (if (($column.task_limit // 0) | tonumber) > 0 then
-          "",
-          "タスク上限: " + ($column.task_limit | text)
-         else empty end),
+      ($swimlanes[] |
+        . as $swimlane |
+        "## " + ($swimlane.name | text),
         "",
-        (if ($column_tasks | length) == 0 then
-          "_タスクなし_"
-         else
-          ($column_tasks[] |
-            . as $task |
-            ([
-              (if ($task.assignee_name // "") != "" then "担当: " + ($task.assignee_name | text)
-               elif ($task.assignee_username // "") != "" then "担当: " + ($task.assignee_username | text)
-               else empty end),
-              (if ($task.category_name // "") != "" then "カテゴリ: " + ($task.category_name | text) else empty end),
-              (($task.date_due | due_date) as $due | if $due then "期限: " + $due else empty end),
-              (if ($task.score // 0 | tonumber) > 0 then "複雑度: " + ($task.score | text) else empty end)
-            ] | join(" / ")) as $meta |
-            "- #" + ($task.id | text) + " " + ($task.title | text) +
-            (if $meta != "" then " — " + $meta else "" end)
-          )
-        end),
-        ""
+        ($swimlane.columns | sort_by(.position | tonumber)[] |
+          . as $column |
+          (($column.tasks // []) | sort_by(.position | tonumber)) as $column_tasks |
+          "### " + ($column.title | text) + " (" + ($column_tasks | length | tostring) + ")",
+          (if (($column.task_limit // 0) | tonumber) > 0 then
+            "",
+            "タスク上限: " + ($column.task_limit | text)
+           else empty end),
+          "",
+          (if ($column_tasks | length) == 0 then
+            "_タスクなし_"
+           else
+            ($column_tasks[] |
+              . as $task |
+              ([
+                (if ($task.assignee_name // "") != "" then "担当: " + ($task.assignee_name | text)
+                 elif ($task.assignee_username // "") != "" then "担当: " + ($task.assignee_username | text)
+                 else empty end),
+                (if ($task.category_name // "") != "" then "カテゴリ: " + ($task.category_name | text) else empty end),
+                (($task.date_due | due_date) as $due | if $due then "期限: " + $due else empty end),
+                (if ($task.score // 0 | tonumber) > 0 then "複雑度: " + ($task.score | text) else empty end)
+              ] | join(" / ")) as $meta |
+              "- #" + ($task.id | text) + " " + ($task.title | text) +
+              (if $meta != "" then " — " + $meta else "" end)
+            )
+          end),
+          ""
+        )
       )
     '
 }

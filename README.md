@@ -58,7 +58,7 @@ Usage: ./kanboard-to-md.sh <board_id>
 次の情報を Markdown に変換します。
 
 - プロジェクト名、ID、状態、説明
-- ボードの列と列ごとのタスク数
+- スイムレーン、列、列ごとのタスク数
 - 有効なタスクの ID とタイトル
 - 担当者、カテゴリ、期限、複雑度（設定されている場合）
 - 列のタスク上限（設定されている場合）
@@ -71,16 +71,18 @@ Usage: ./kanboard-to-md.sh <board_id>
 - プロジェクトID: 3
 - 状態: 有効
 
-## Backlog (1)
+## Default swimlane
+
+### Backlog (1)
 
 - #10 APIを実装する — 担当: user / 期限: 2026-07-31
 
-## Done (0)
+### Done (0)
 
 _タスクなし_
 ```
 
-スクリプトは Kanboard JSON-RPC API の `getProjectById`、`getColumns`、`getAllTasks` を使用します。`getAllTasks` では有効なタスクのみ取得します。
+スクリプトは Kanboard JSON-RPC API の `getProjectById` と `getBoard` を使用します。デフォルトを含む各スイムレーンを `##`、その中の列を `###` の見出しとして出力します。
 
 ## 検査
 
