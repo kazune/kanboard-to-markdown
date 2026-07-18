@@ -2,8 +2,6 @@
 
 set -euo pipefail
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-
 usage() {
   cat >&2 <<EOF
 Usage:
@@ -36,18 +34,158 @@ case "$COMMAND" in
     ;;
 esac
 
-# 環境変数が未設定の場合は、スクリプトと同じ場所の .env を読み込む。
-if [[ -f "$SCRIPT_DIR/.env" ]] &&
-   [[ -z "${KANBOARD_URL:-}" || -z "${KANBOARD_USERNAME:-}" || -z "${KANBOARD_API_TOKEN:-}" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "$SCRIPT_DIR/.env"
-  set +a
-fi
+CONFIG_FILE=
+CONFIG_STATUS="未確認"
+CONFIG_SOURCE="決定できず"
+ENV_URL_STATUS="未設定"
+ENV_USERNAME_STATUS="未設定"
+ENV_TOKEN_STATUS="未設定"
+ENV_CONFIG_STATUS="未設定"
+ENV_XDG_STATUS="未設定"
+ENV_HOME_STATUS="未設定"
 
-: "${KANBOARD_URL:?KANBOARD_URL is required}"
-: "${KANBOARD_USERNAME:?KANBOARD_USERNAME is required}"
-: "${KANBOARD_API_TOKEN:?KANBOARD_API_TOKEN is required}"
+config_file_mode() {
+  local file=$1
+  local mode=
+
+  if mode=$(stat -L -f '%Lp' "$file" 2>/dev/null) && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+
+  if mode=$(stat -L -c '%a' "$file" 2>/dev/null) && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+
+  return 1
+}
+
+check_config_permissions() {
+  local file=$1
+  local mode=
+
+  if ! mode=$(config_file_mode "$file"); then
+    CONFIG_STATUS="権限を確認できず"
+    echo "Error: could not determine config file permissions: $file" >&2
+    exit 1
+  fi
+
+  if [[ "${mode: -2}" != "00" ]]; then
+    CONFIG_STATUS="安全でないパーミッション（${mode}）"
+    echo "Error: insecure config file permissions: $file (mode $mode)" >&2
+    echo "Remove all permissions for group and others, for example: chmod 600 '$file'" >&2
+    exit 1
+  fi
+}
+
+load_config() {
+  local config_home=
+  local saved_url=${KANBOARD_URL:-}
+  local saved_username=${KANBOARD_USERNAME:-}
+  local saved_token=${KANBOARD_API_TOKEN:-}
+
+  if [[ -n "${KANBOARD_MD_CONFIG:-}" ]]; then
+    ENV_CONFIG_STATUS="設定済み"
+  fi
+  if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
+    ENV_XDG_STATUS="設定済み"
+  fi
+  if [[ -n "${HOME:-}" ]]; then
+    ENV_HOME_STATUS="設定済み"
+  fi
+
+  if [[ -n "$saved_url" ]]; then
+    ENV_URL_STATUS="設定済み"
+  fi
+  if [[ -n "$saved_username" ]]; then
+    ENV_USERNAME_STATUS="設定済み"
+  fi
+  if [[ -n "$saved_token" ]]; then
+    ENV_TOKEN_STATUS="設定済み"
+  fi
+
+  if [[ -n "$saved_url" && -n "$saved_username" && -n "$saved_token" ]]; then
+    CONFIG_STATUS="不要（必要な環境変数はすべて設定済み）"
+    return
+  fi
+
+  if [[ -n "${KANBOARD_MD_CONFIG:-}" ]]; then
+    CONFIG_FILE=$KANBOARD_MD_CONFIG
+    CONFIG_SOURCE="KANBOARD_MD_CONFIG"
+  elif [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
+    config_home=$XDG_CONFIG_HOME
+    CONFIG_FILE="$config_home/kanboard-md/config.env"
+    CONFIG_SOURCE="XDG_CONFIG_HOME"
+  elif [[ -n "${HOME:-}" ]]; then
+    config_home="$HOME/.config"
+    CONFIG_FILE="$config_home/kanboard-md/config.env"
+    CONFIG_SOURCE="HOME"
+  else
+    CONFIG_SOURCE="決定できず"
+  fi
+
+  if [[ -z "$CONFIG_FILE" ]]; then
+    CONFIG_STATUS="探索不可（XDG_CONFIG_HOME と HOME が未設定）"
+  elif [[ -f "$CONFIG_FILE" ]]; then
+    check_config_permissions "$CONFIG_FILE"
+    set -a
+    # shellcheck disable=SC1090
+    source "$CONFIG_FILE"
+    set +a
+    CONFIG_STATUS="読込済み"
+  else
+    CONFIG_STATUS="ファイルなし"
+  fi
+
+  # 直接指定された環境変数を設定ファイルの値より優先する。
+  if [[ -n "$saved_url" ]]; then
+    KANBOARD_URL=$saved_url
+  fi
+  if [[ -n "$saved_username" ]]; then
+    KANBOARD_USERNAME=$saved_username
+  fi
+  if [[ -n "$saved_token" ]]; then
+    KANBOARD_API_TOKEN=$saved_token
+  fi
+}
+
+load_config
+
+require_config() {
+  local missing=()
+
+  if [[ -z "${KANBOARD_URL:-}" ]]; then
+    missing+=("KANBOARD_URL")
+  fi
+  if [[ -z "${KANBOARD_USERNAME:-}" ]]; then
+    missing+=("KANBOARD_USERNAME")
+  fi
+  if [[ -z "${KANBOARD_API_TOKEN:-}" ]]; then
+    missing+=("KANBOARD_API_TOKEN")
+  fi
+
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    return
+  fi
+
+  echo "Error: required configuration is missing: ${missing[*]}" >&2
+  echo "確認した設定:" >&2
+  echo "  環境変数 KANBOARD_URL: $ENV_URL_STATUS" >&2
+  echo "  環境変数 KANBOARD_USERNAME: $ENV_USERNAME_STATUS" >&2
+  echo "  環境変数 KANBOARD_API_TOKEN: $ENV_TOKEN_STATUS" >&2
+  echo "  探索用環境変数 KANBOARD_MD_CONFIG: $ENV_CONFIG_STATUS" >&2
+  echo "  探索用環境変数 XDG_CONFIG_HOME: $ENV_XDG_STATUS" >&2
+  echo "  探索用環境変数 HOME: $ENV_HOME_STATUS" >&2
+  if [[ -n "$CONFIG_FILE" ]]; then
+    echo "  設定ファイル $CONFIG_FILE: ${CONFIG_STATUS}（${CONFIG_SOURCE} から決定）" >&2
+  else
+    echo "  設定ファイル: $CONFIG_STATUS" >&2
+  fi
+  exit 1
+}
+
+require_config
 
 for command_name in curl jq; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
