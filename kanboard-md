@@ -127,11 +127,12 @@ load_config() {
 
   if ! config_json=$(jq -ce '
     if type == "object" and
-       (.url | type == "string" and length > 0) and
-       (.username | type == "string" and length > 0) and
-       (.apiToken | type == "string" and length > 0)
+       (.url | type == "string" and length > 0 and (test("[\\x00-\\x1F\\x7F]") | not)) and
+       (.username | type == "string" and length > 0 and
+         (contains(":") | not) and (test("[\\x00-\\x1F\\x7F]") | not)) and
+       (.apiToken | type == "string" and length > 0 and (test("[\\x00-\\x1F\\x7F]") | not))
     then {url, username, apiToken}
-    else error("url, username, and apiToken must be non-empty strings")
+    else error("url, username, and apiToken must be non-empty strings without control characters; username must not contain a colon")
     end
   ' /dev/fd/9); then
     echo "Error: invalid config file: $CONFIG_FILE" >&2
@@ -139,6 +140,7 @@ load_config() {
   fi
   exec 9<&-
 
+  unset KANBOARD_URL KANBOARD_USERNAME KANBOARD_API_TOKEN
   KANBOARD_URL=$(jq -r '.url' <<<"$config_json")
   KANBOARD_USERNAME=$(jq -r '.username' <<<"$config_json")
   KANBOARD_API_TOKEN=$(jq -r '.apiToken' <<<"$config_json")
@@ -151,8 +153,24 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 1
 fi
 
+umask 077
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/kanboard-md.XXXXXX")
 trap 'rm -rf "$TMP_DIR"' EXIT
+
+curl_config_escape() {
+  local value=$1
+
+  value=${value//\\/\\\\}
+  value=${value//\"/\\\"}
+  printf '%s' "$value"
+}
+
+CURL_CONFIG="$TMP_DIR/curl.conf"
+printf 'user = "%s:%s"\n' \
+  "$(curl_config_escape "$KANBOARD_USERNAME")" \
+  "$(curl_config_escape "$KANBOARD_API_TOKEN")" \
+  >"$CURL_CONFIG"
+unset KANBOARD_API_TOKEN
 
 rpc() {
   local method=$1
@@ -168,7 +186,9 @@ rpc() {
     >"$request_file"
 
   curl -fsS \
-    -u "$KANBOARD_USERNAME:$KANBOARD_API_TOKEN" \
+    --config "$CURL_CONFIG" \
+    --connect-timeout 10 \
+    --max-time 60 \
     -H "Content-Type: application/json" \
     --data-binary "@$request_file" \
     "${KANBOARD_URL%/}/jsonrpc.php" \
