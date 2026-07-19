@@ -22,57 +22,43 @@ printf '%s\n' \
 chmod +x "$TEST_DIR/bin/curl" "$TEST_DIR/bin/jq"
 
 run_command() {
-  env -u KANBOARD_URL -u KANBOARD_USERNAME -u KANBOARD_API_TOKEN \
-    PATH="$TEST_DIR/bin:/usr/bin:/bin" \
-    "$PROJECT_DIR/kanboard-md" boards
+  PATH="$TEST_DIR/bin:/usr/bin:/bin" \
+    "$PROJECT_DIR/kanboard-md" --config "$1" boards
 }
 
-# Relative XDG_CONFIG_HOME values must not cause a config file in the current
-# directory to be sourced.
-mkdir -p "$TEST_DIR/relative/kanboard-md"
+# --config is required.
+if PATH="$TEST_DIR/bin:/usr/bin:/bin" \
+  "$PROJECT_DIR/kanboard-md" boards >/dev/null 2>&1; then
+  echo "command without --config unexpectedly succeeded" >&2
+  exit 1
+fi
+
+# An explicitly specified relative config is sourced successfully.
+mkdir -p "$TEST_DIR/relative"
 printf '%s\n' \
   'touch "$CONFIG_MARKER"' \
   'KANBOARD_URL=https://relative.invalid' \
   'KANBOARD_USERNAME=relative-user' \
   'KANBOARD_API_TOKEN=relative-token' \
-  >"$TEST_DIR/relative/kanboard-md/config.env"
-chmod 600 "$TEST_DIR/relative/kanboard-md/config.env"
-if (
+  >"$TEST_DIR/relative/config.env"
+chmod 600 "$TEST_DIR/relative/config.env"
+(
   cd "$TEST_DIR/relative"
-  CONFIG_MARKER="$TEST_DIR/relative-marker" XDG_CONFIG_HOME=. HOME='' run_command
-) >/dev/null 2>&1; then
-  echo "relative XDG_CONFIG_HOME unexpectedly succeeded" >&2
-  exit 1
-fi
-if [[ -e "$TEST_DIR/relative-marker" ]]; then
-  echo "relative XDG_CONFIG_HOME was sourced" >&2
-  exit 1
-fi
-
-# A secure config under an absolute XDG_CONFIG_HOME is sourced successfully.
-mkdir -p "$TEST_DIR/absolute/kanboard-md"
-printf '%s\n' \
-  'touch "$CONFIG_MARKER"' \
-  'KANBOARD_URL=https://absolute.invalid' \
-  'KANBOARD_USERNAME=absolute-user' \
-  'KANBOARD_API_TOKEN=absolute-token' \
-  >"$TEST_DIR/absolute/kanboard-md/config.env"
-chmod 600 "$TEST_DIR/absolute/kanboard-md/config.env"
-CONFIG_MARKER="$TEST_DIR/absolute-marker" XDG_CONFIG_HOME="$TEST_DIR/absolute" HOME='' \
-  run_command >/dev/null
-[[ -e "$TEST_DIR/absolute-marker" ]]
+  CONFIG_MARKER="$TEST_DIR/relative-marker" run_command config.env
+) >/dev/null
+[[ -e "$TEST_DIR/relative-marker" ]]
 
 # Group-readable files are rejected before any commands in them execute.
-mkdir -p "$TEST_DIR/insecure/kanboard-md"
+mkdir -p "$TEST_DIR/insecure"
 printf '%s\n' \
   'touch "$CONFIG_MARKER"' \
   'KANBOARD_URL=https://insecure.invalid' \
   'KANBOARD_USERNAME=insecure-user' \
   'KANBOARD_API_TOKEN=insecure-token' \
-  >"$TEST_DIR/insecure/kanboard-md/config.env"
-chmod 640 "$TEST_DIR/insecure/kanboard-md/config.env"
-if CONFIG_MARKER="$TEST_DIR/insecure-marker" XDG_CONFIG_HOME="$TEST_DIR/insecure" HOME='' \
-  run_command >/dev/null 2>&1; then
+  >"$TEST_DIR/insecure/config.env"
+chmod 640 "$TEST_DIR/insecure/config.env"
+if CONFIG_MARKER="$TEST_DIR/insecure-marker" \
+  run_command "$TEST_DIR/insecure/config.env" >/dev/null 2>&1; then
   echo "insecure config unexpectedly succeeded" >&2
   exit 1
 fi
@@ -81,26 +67,36 @@ if [[ -e "$TEST_DIR/insecure-marker" ]]; then
   exit 1
 fi
 
-# Existing credential variables override values from the config, while a
-# missing credential is filled from it.
-mkdir -p "$TEST_DIR/priority/kanboard-md"
+# Credential environment variables are ignored in favor of the config file.
+mkdir -p "$TEST_DIR/environment"
 printf '%s\n' \
   'KANBOARD_URL=https://config.invalid' \
   'KANBOARD_USERNAME=config-user' \
   'KANBOARD_API_TOKEN=config-token' \
-  >"$TEST_DIR/priority/kanboard-md/config.env"
-chmod 600 "$TEST_DIR/priority/kanboard-md/config.env"
+  >"$TEST_DIR/environment/config.env"
+chmod 600 "$TEST_DIR/environment/config.env"
 KANBOARD_URL=https://environment.invalid \
 KANBOARD_USERNAME=environment-user \
-XDG_CONFIG_HOME="$TEST_DIR/priority" \
-HOME='' \
+KANBOARD_API_TOKEN=environment-token \
 CURL_ARGS_FILE="$TEST_DIR/curl-args" \
-PATH="$TEST_DIR/bin:/usr/bin:/bin" \
-  "$PROJECT_DIR/kanboard-md" boards >/dev/null
+  run_command "$TEST_DIR/environment/config.env" >/dev/null
 curl_args=$(<"$TEST_DIR/curl-args")
-if [[ "$curl_args" != *"environment-user:config-token"* ||
-      "$curl_args" != *"https://environment.invalid/jsonrpc.php"* ]]; then
-  echo "environment credentials did not take priority" >&2
+if [[ "$curl_args" != *"config-user:config-token"* ||
+      "$curl_args" != *"https://config.invalid/jsonrpc.php"* ]]; then
+  echo "credential environment variables were not ignored" >&2
+  exit 1
+fi
+
+# An environment variable cannot fill a value missing from the config file.
+mkdir -p "$TEST_DIR/missing"
+printf '%s\n' \
+  'KANBOARD_URL=https://missing.invalid' \
+  'KANBOARD_USERNAME=missing-user' \
+  >"$TEST_DIR/missing/config.env"
+chmod 600 "$TEST_DIR/missing/config.env"
+if KANBOARD_API_TOKEN=environment-token \
+  run_command "$TEST_DIR/missing/config.env" >/dev/null 2>&1; then
+  echo "environment variable filled missing config unexpectedly" >&2
   exit 1
 fi
 
