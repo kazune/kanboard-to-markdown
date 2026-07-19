@@ -156,9 +156,12 @@ Usage:
 
 ## 検査
 
-構文と ShellCheck の検査は次のコマンドで実行できます。
+構文検査、ShellCheck、テストは次のコマンドで実行できます。
 
 ```bash
-bash -n kanboard-md
-shellcheck kanboard-md
+bash -n kanboard-md tests/*.sh
+shellcheck kanboard-md tests/*.sh
+for test_script in tests/*-test.sh; do "$test_script"; done
 ```
+
+pushとpull requestでは、GitHub ActionsがUbuntuとmacOSの両方で同じ検査を実行します。
