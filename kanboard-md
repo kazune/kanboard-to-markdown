@@ -42,6 +42,11 @@ case "$COMMAND" in
     ;;
 esac
 
+if ! command -v jq >/dev/null 2>&1; then
+  echo "Error: jq is required." >&2
+  exit 1
+fi
+
 config_file_mode() {
   local file=$1
   local mode=
@@ -106,6 +111,8 @@ check_config_permissions() {
 }
 
 load_config() {
+  local config_json=
+
   if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "Error: config file not found: $CONFIG_FILE" >&2
     exit 1
@@ -118,45 +125,31 @@ load_config() {
 
   check_config_permissions /dev/fd/9 "$CONFIG_FILE"
 
-  unset KANBOARD_URL KANBOARD_USERNAME KANBOARD_API_TOKEN
-  set -a
-  # shellcheck disable=SC1091
-  source /dev/fd/9
-  set +a
+  if ! config_json=$(jq -ce '
+    if type == "object" and
+       (.url | type == "string" and length > 0) and
+       (.username | type == "string" and length > 0) and
+       (.apiToken | type == "string" and length > 0)
+    then {url, username, apiToken}
+    else error("url, username, and apiToken must be non-empty strings")
+    end
+  ' /dev/fd/9); then
+    echo "Error: invalid config file: $CONFIG_FILE" >&2
+    exit 1
+  fi
   exec 9<&-
+
+  KANBOARD_URL=$(jq -r '.url' <<<"$config_json")
+  KANBOARD_USERNAME=$(jq -r '.username' <<<"$config_json")
+  KANBOARD_API_TOKEN=$(jq -r '.apiToken' <<<"$config_json")
 }
 
 load_config
 
-require_config() {
-  local missing=()
-
-  if [[ -z "${KANBOARD_URL:-}" ]]; then
-    missing+=("KANBOARD_URL")
-  fi
-  if [[ -z "${KANBOARD_USERNAME:-}" ]]; then
-    missing+=("KANBOARD_USERNAME")
-  fi
-  if [[ -z "${KANBOARD_API_TOKEN:-}" ]]; then
-    missing+=("KANBOARD_API_TOKEN")
-  fi
-
-  if [[ ${#missing[@]} -eq 0 ]]; then
-    return
-  fi
-
-  echo "Error: required configuration is missing from $CONFIG_FILE: ${missing[*]}" >&2
+if ! command -v curl >/dev/null 2>&1; then
+  echo "Error: curl is required." >&2
   exit 1
-}
-
-require_config
-
-for command_name in curl jq; do
-  if ! command -v "$command_name" >/dev/null 2>&1; then
-    echo "Error: $command_name is required." >&2
-    exit 1
-  fi
-done
+fi
 
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/kanboard-md.XXXXXX")
 trap 'rm -rf "$TMP_DIR"' EXIT
