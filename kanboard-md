@@ -172,10 +172,37 @@ printf 'user = "%s:%s"\n' \
   >"$CURL_CONFIG"
 unset KANBOARD_API_TOKEN
 
+require_json_type() {
+  local expected=$1
+  local file=$2
+  local context=$3
+  local filter=
+  local actual=
+
+  case "$expected" in
+    array) filter='type == "array"' ;;
+    object) filter='type == "object"' ;;
+    object-or-missing) filter='type == "object" or . == false or . == null' ;;
+    *)
+      echo "Error: internal error: unsupported JSON type $expected." >&2
+      exit 1
+      ;;
+  esac
+
+  if jq -e "$filter" "$file" >/dev/null; then
+    return
+  fi
+
+  actual=$(jq -r 'type' "$file")
+  echo "Error: unexpected response type from $context: expected $expected, got $actual." >&2
+  exit 1
+}
+
 rpc() {
   local method=$1
   local params=$2
   local destination=$3
+  local expected_type=$4
   local request_file="$TMP_DIR/request.json"
   local response_file="$TMP_DIR/response.json"
 
@@ -194,14 +221,23 @@ rpc() {
     "${KANBOARD_URL%/}/jsonrpc.php" \
     >"$response_file"
 
-  if ! jq -e 'has("result") and (.error == null)' "$response_file" >/dev/null; then
+  if ! jq -e . "$response_file" >/dev/null 2>&1; then
+    echo "Error: invalid JSON response from $method." >&2
+    exit 1
+  fi
+
+  if ! jq -e 'type == "object" and has("result") and (.error == null)' "$response_file" >/dev/null; then
     echo "Kanboard API error in $method:" >&2
-    jq -r 'if .error then (.error.message // (.error | tostring)) else "Invalid JSON-RPC response" end' \
+    jq -r 'if type == "object" and .error then
+             (.error.message // (.error | tostring))
+           else "Invalid JSON-RPC response"
+           end' \
       "$response_file" >&2
     exit 1
   fi
 
   jq '.result' "$response_file" >"$destination"
+  require_json_type "$expected_type" "$destination" "$method"
 }
 
 export_boards() {
@@ -211,7 +247,7 @@ export_boards() {
     method=getAllProjects
   fi
 
-  rpc "$method" '{}' "$TMP_DIR/projects.json"
+  rpc "$method" '{}' "$TMP_DIR/projects.json" array
 
   jq -nr \
     --slurpfile projects "$TMP_DIR/projects.json" '
@@ -260,8 +296,12 @@ export_board() {
   local params
 
   params=$(jq -cn --argjson project_id "$board_id" '{project_id: $project_id}')
-  rpc "getProjectById" "$params" "$TMP_DIR/project.json"
-  rpc "getBoard" "$params" "$TMP_DIR/board.json"
+  rpc "getProjectById" "$params" "$TMP_DIR/project.json" object-or-missing
+  if ! jq -e 'type == "object"' "$TMP_DIR/project.json" >/dev/null; then
+    echo "Error: board $board_id was not found." >&2
+    exit 1
+  fi
+  rpc "getBoard" "$params" "$TMP_DIR/board.json" array
 
   jq -nr \
     --slurpfile project "$TMP_DIR/project.json" \
@@ -333,7 +373,7 @@ export_task() {
   local project_params
 
   task_params=$(jq -cn --argjson task_id "$task_id" '{task_id: $task_id}')
-  rpc "getTask" "$task_params" "$TMP_DIR/task.json"
+  rpc "getTask" "$task_params" "$TMP_DIR/task.json" object-or-missing
 
   if ! jq -e 'type == "object"' "$TMP_DIR/task.json" >/dev/null; then
     echo "Error: task $task_id was not found." >&2
@@ -343,10 +383,10 @@ export_task() {
   project_id=$(jq -r '.project_id' "$TMP_DIR/task.json")
   project_params=$(jq -cn --argjson project_id "$project_id" '{project_id: $project_id}')
 
-  rpc "getProjectById" "$project_params" "$TMP_DIR/project.json"
-  rpc "getBoard" "$project_params" "$TMP_DIR/board.json"
-  rpc "getAllSubtasks" "$task_params" "$TMP_DIR/subtasks.json"
-  rpc "getAllComments" "$task_params" "$TMP_DIR/comments.json"
+  rpc "getProjectById" "$project_params" "$TMP_DIR/project.json" object
+  rpc "getBoard" "$project_params" "$TMP_DIR/board.json" array
+  rpc "getAllSubtasks" "$task_params" "$TMP_DIR/subtasks.json" array
+  rpc "getAllComments" "$task_params" "$TMP_DIR/comments.json" array
 
   jq -nr \
     --arg task_id "$task_id" \
