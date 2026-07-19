@@ -198,15 +198,25 @@ export_boards() {
       def text:
         if . == null then "" else tostring | gsub("[\\r\\n]+"; " ") end;
 
+      def inline_text:
+        text | gsub("(?<char>[\\\\`*_{}\\[\\]()<>#+.!|~-])"; "\\\(.char)");
+
+      def link_url:
+        text
+        | gsub("\\\\"; "%5C")
+        | gsub(" "; "%20")
+        | gsub("<"; "%3C")
+        | gsub(">"; "%3E");
+
       def items:
         if type == "array" then . else [] end;
 
       def board_link:
         "- #" + (.id | text) + " " +
         (if (.url.board // "") != "" then
-          "[" + (.name | text) + "](" + .url.board + ")"
-         else .name | text end) +
-        (if (.identifier // "") != "" then " (`" + (.identifier | text) + "`)" else "" end);
+          "[" + (.name | inline_text) + "](<" + (.url.board | link_url) + ">)"
+         else .name | inline_text end) +
+        (if (.identifier // "") != "" then " (" + (.identifier | inline_text) + ")" else "" end);
 
       ($projects[0] | items | sort_by(.id | tonumber)) as $all |
       ([$all[] | select((.is_active | tostring) == "1")]) as $active |
@@ -239,6 +249,9 @@ export_board() {
       def text:
         if . == null then "" else tostring | gsub("[\\r\\n]+"; " ") end;
 
+      def inline_text:
+        text | gsub("(?<char>[\\\\`*_{}\\[\\]()<>#+.!|~-])"; "\\\(.char)");
+
       def due_date:
         if . == null or . == "" or . == 0 or . == "0" then null
         elif type == "number" then strftime("%Y-%m-%d")
@@ -249,22 +262,22 @@ export_board() {
       ($project[0]) as $p |
       ($board[0]) as $swimlanes |
 
-      "# " + ($p.name | text),
+      "# " + ($p.name | inline_text),
       "",
       "- プロジェクトID: " + ($p.id | text),
       "- 状態: " + (if ($p.is_active | tostring) == "1" then "有効" else "無効" end),
       (if ($p.description // "") != "" then
-        "- 説明: " + ($p.description | text)
+        "- 説明: " + ($p.description | inline_text)
        else empty end),
       "",
       ($swimlanes[] |
         . as $swimlane |
-        "## " + ($swimlane.name | text),
+        "## " + ($swimlane.name | inline_text),
         "",
         ($swimlane.columns | sort_by(.position | tonumber)[] |
           . as $column |
           (($column.tasks // []) | sort_by(.position | tonumber)) as $column_tasks |
-          "### " + ($column.title | text) + " (" + ($column_tasks | length | tostring) + ")",
+          "### " + ($column.title | inline_text) + " (" + ($column_tasks | length | tostring) + ")",
           (if (($column.task_limit // 0) | tonumber) > 0 then
             "",
             "タスク上限: " + ($column.task_limit | text)
@@ -276,14 +289,14 @@ export_board() {
             ($column_tasks[] |
               . as $task |
               ([
-                (if ($task.assignee_name // "") != "" then "担当: " + ($task.assignee_name | text)
-                 elif ($task.assignee_username // "") != "" then "担当: " + ($task.assignee_username | text)
+                (if ($task.assignee_name // "") != "" then "担当: " + ($task.assignee_name | inline_text)
+                 elif ($task.assignee_username // "") != "" then "担当: " + ($task.assignee_username | inline_text)
                  else "担当: 未割り当て" end),
-                (if ($task.category_name // "") != "" then "カテゴリ: " + ($task.category_name | text) else empty end),
+                (if ($task.category_name // "") != "" then "カテゴリ: " + ($task.category_name | inline_text) else empty end),
                 (($task.date_due | due_date) as $due | if $due then "期限: " + $due else empty end),
                 (if ($task.score // 0 | tonumber) > 0 then "複雑度: " + ($task.score | text) else empty end)
               ] | join(" / ")) as $meta |
-              "- #" + ($task.id | text) + " " + ($task.title | text) +
+              "- #" + ($task.id | text) + " " + ($task.title | inline_text) +
               (if $meta != "" then " — " + $meta else "" end)
             )
           end),
@@ -325,6 +338,16 @@ export_task() {
       def text:
         if . == null then "" else tostring | gsub("[\\r\\n]+"; " ") end;
 
+      def inline_text:
+        text | gsub("(?<char>[\\\\`*_{}\\[\\]()<>#+.!|~-])"; "\\\(.char)");
+
+      def link_url:
+        text
+        | gsub("\\\\"; "%5C")
+        | gsub(" "; "%20")
+        | gsub("<"; "%3C")
+        | gsub(">"; "%3E");
+
       def markdown:
         if . == null then "" else tostring | gsub("\\r\\n"; "\n") | gsub("\\r"; "\n") end;
 
@@ -352,26 +375,26 @@ export_task() {
         }
       ] | first // {}) as $board_task |
 
-      "# #" + ($t.id | text) + " " + ($t.title | text),
+      "# #" + ($t.id | text) + " " + ($t.title | inline_text),
       "",
       "- 状態: " + (if ($t.is_active | tostring) == "1" then "有効" else "完了" end),
-      "- プロジェクト: " + ($p.name // ("ID: " + ($t.project_id | text)) | text),
+      "- プロジェクト: " + ($p.name // ("ID: " + ($t.project_id | text)) | inline_text),
       "- スイムレーン: " +
-        (if ($board_task.swimlane_name // "") != "" then $board_task.swimlane_name
-         elif ($t.swimlane_id | tostring) == "0" then ($p.default_swimlane // "Default swimlane")
+        (if ($board_task.swimlane_name // "") != "" then ($board_task.swimlane_name | inline_text)
+         elif ($t.swimlane_id | tostring) == "0" then ($p.default_swimlane // "Default swimlane" | inline_text)
          else "ID: " + ($t.swimlane_id | text) end),
-      "- 列: " + ($board_task.column_name // ("ID: " + ($t.column_id | text)) | text),
+      "- 列: " + ($board_task.column_name // ("ID: " + ($t.column_id | text)) | inline_text),
       "- 担当: " +
-        (if ($board_task.assignee_name // "") != "" then ($board_task.assignee_name | text)
-         elif ($board_task.assignee_username // "") != "" then ($board_task.assignee_username | text)
+        (if ($board_task.assignee_name // "") != "" then ($board_task.assignee_name | inline_text)
+         elif ($board_task.assignee_username // "") != "" then ($board_task.assignee_username | inline_text)
          elif ($t.owner_id | tostring) == "0" then "未割り当て"
          else "ユーザーID: " + ($t.owner_id | text) end),
       (if ($board_task.category_name // "") != "" then
-        "- カテゴリ: " + ($board_task.category_name | text)
+        "- カテゴリ: " + ($board_task.category_name | inline_text)
        elif ($t.category_id | tostring) != "0" then
         "- カテゴリID: " + ($t.category_id | text)
        else empty end),
-      (if ($t.reference // "") != "" then "- 参照: " + ($t.reference | text) else empty end),
+      (if ($t.reference // "") != "" then "- 参照: " + ($t.reference | inline_text) else empty end),
       (if ($t.priority // 0 | tonumber) > 0 then "- 優先度: " + ($t.priority | text) else empty end),
       (if ($t.score // 0 | tonumber) > 0 then "- 複雑度: " + ($t.score | text) else empty end),
       (if ($t.time_estimated // 0 | tonumber) > 0 then "- 見積時間: " + ($t.time_estimated | text) + "h" else empty end),
@@ -380,7 +403,7 @@ export_task() {
       (($t.date_started | timestamp) as $date | if $date then "- 開始: " + $date else empty end),
       (($t.date_due | timestamp) as $date | if $date then "- 期限: " + $date else empty end),
       (($t.date_completed | timestamp) as $date | if $date then "- 完了: " + $date else empty end),
-      (if ($t.url // "") != "" then "- URL: " + $t.url else empty end),
+      (if ($t.url // "") != "" then "- URL: <" + ($t.url | link_url) + ">" else empty end),
       "",
       "## 説明",
       "",
@@ -392,10 +415,10 @@ export_task() {
         "_サブタスクなし_"
        else
         ($sts[] |
-          "- [" + (if (.status | tostring) == "2" then "x" else " " end) + "] " + (.title | text) +
+          "- [" + (if (.status | tostring) == "2" then "x" else " " end) + "] " + (.title | inline_text) +
           (if (.status | tostring) == "1" then "（進行中）" else "" end) +
-          (if (.name // "") != "" then " — 担当: " + (.name | text)
-           elif (.username // "") != "" then " — 担当: " + (.username | text)
+          (if (.name // "") != "" then " — 担当: " + (.name | inline_text)
+           elif (.username // "") != "" then " — 担当: " + (.username | inline_text)
            else "" end)
         )
       end),
@@ -407,8 +430,8 @@ export_task() {
        else
         ($cs[] |
           "### " +
-            (if (.name // "") != "" then (.name | text)
-             elif (.username // "") != "" then (.username | text)
+            (if (.name // "") != "" then (.name | inline_text)
+             elif (.username // "") != "" then (.username | inline_text)
              else "不明なユーザー" end) +
             ((.date_creation | timestamp) as $date | if $date then " — " + $date else "" end),
           "",

@@ -1,0 +1,21 @@
+{
+  "id": "63",
+  "title": "Fix [link](bad) #heading *star*",
+  "description": "Keep **Markdown** here.\n\n- item",
+  "project_id": "3",
+  "column_id": "4",
+  "swimlane_id": "1",
+  "owner_id": "8",
+  "category_id": "7",
+  "is_active": "1",
+  "reference": "REF_[63]",
+  "priority": "2",
+  "score": "3",
+  "time_estimated": "4",
+  "time_spent": "1",
+  "date_creation": "0",
+  "date_started": "0",
+  "date_due": "0",
+  "date_completed": "0",
+  "url": "https://kanboard.invalid/task/63(a b)"
+}

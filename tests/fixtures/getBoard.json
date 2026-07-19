@@ -1,0 +1,25 @@
+[
+  {
+    "id": "1",
+    "name": "Main #lane",
+    "columns": [
+      {
+        "id": "4",
+        "title": "Work [now]",
+        "position": "1",
+        "task_limit": "2",
+        "tasks": [
+          {
+            "id": "63",
+            "title": "Fix [link](bad) #heading *star*",
+            "position": "1",
+            "assignee_name": "A_*User",
+            "category_name": "Bug [urgent]",
+            "date_due": "0",
+            "score": "3"
+          }
+        ]
+      }
+    ]
+  }
+]
